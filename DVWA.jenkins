@@ -1,0 +1,14 @@
+node {
+    stage('Preparation') {
+        // Get some code from a GitHub repository
+        git 'https://github.com/digininja/DVWA.git'
+    }
+    stage('Show') {
+        // Show folders
+        if (isUnix()) {
+            sh 'dir'
+        } else {
+            bat("dir")
+        }
+    }
+}

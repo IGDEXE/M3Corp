@@ -1,0 +1,14 @@
+node {
+    stage('Preparation') { // for display purposes
+        // Get some code from a GitHub repository
+        git 'https://github.com/OWASP/NodeGoat.git'
+    }
+    stage('Build') {
+        // Run the npm install
+        if (isUnix()) {
+            sh 'npm install'
+        } else {
+            bat("npm install")
+        }
+    }
+}

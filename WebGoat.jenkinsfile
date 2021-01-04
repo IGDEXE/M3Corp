@@ -1,0 +1,21 @@
+pipeline {
+    agent any
+
+    tools {
+        // Install the Maven version.
+        maven "3.6.3"
+        jdk "11.0.9"
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                // Get some code from a GitHub repository
+                git 'https://github.com/WebGoat/WebGoat.git'
+                
+                // Run Maven
+                bat("mvn clean install -DskipTests")
+            }
+        }
+    }
+}
