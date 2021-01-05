@@ -1,0 +1,14 @@
+node {
+    stage('Preparation') {
+        // Get some code from a GitHub repository
+        git 'https://github.com/HTBridge/pivaa.git'
+    }
+    stage('Build') {
+        // Show folders
+        if (isUnix()) {
+            sh 'gradlew.bat clean build'
+        } else {
+            bat('"%ProgramFiles%/Android/Android Studio/plugins/android/lib/templates/gradle/wrapper/gradlew.bat" clean build')
+        }
+    }
+}
