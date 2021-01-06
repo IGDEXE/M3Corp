@@ -29,10 +29,14 @@ $veracodeAPIkey = ""
 $tipofiltro = "jar"
 
 try {
-    # Faz o download
-    Invoke-WebRequest -Uri "$urlPipeScan" -OutFile "./pipescan.zip"
-    # Extrai o arquivo
-    Expand-Archive -Path "./pipescan.zip" -DestinationPath "./PipeScan"
+    # Verifica se ja tem o PipelineScan
+    $existe = Test-Path -Path "./PipeScan"
+    if ($Existe -eq $false) {
+        # Faz o download
+        Invoke-WebRequest -Uri "$urlPipeScan" -OutFile "./pipescan.zip"
+        # Extrai o arquivo
+        Expand-Archive -Path "./pipescan.zip" -DestinationPath "./PipeScan"
+    }
 }
 catch {
     $ErrorMessage = $_.Exception.Message # Recebe o erro
@@ -43,6 +47,7 @@ catch {
 # Filtra os arquivos
 $arquivos = Get-ChildItem "./*" -Include "*.$tipofiltro" -recurse
 # Faz a verificacao
+Clear-Host
 foreach ($arquivo in $arquivos) {
     PipeScan $arquivo $veracodeID $veracodeAPIkey
 }

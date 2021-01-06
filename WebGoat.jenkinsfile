@@ -8,11 +8,14 @@ pipeline {
     }
 
     stages {
-        stage('Build') {
+        stage('Git') {
             steps {
                 // Get some code from a GitHub repository
                 git 'https://github.com/WebGoat/WebGoat.git'
-                
+            }
+        }
+        stage('Build') {
+            steps {
                 // Run Maven
                 bat("mvn clean install -DskipTests")
             }
