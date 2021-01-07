@@ -26,7 +26,7 @@ function PipeScan {
 $urlPipeScan = "https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip"
 $veracodeID = ""
 $veracodeAPIkey = ""
-$tipofiltro = "jar"
+$tipofiltro = ""
 
 try {
     # Verifica se ja tem o PipelineScan
