@@ -1,0 +1,15 @@
+node {
+    stage('Recebendo os arquivos') {
+        // Recebe os dados de um repositorio no GitHub
+        git 'https://github.com/OWASP/NodeGoat.git'
+    }
+    stage('Build') {
+        // Roda o NPM Install validando antes se o sistema é Unix ou não
+        // No caso de não ser, assume que é um sistema Windows e roda o comando no CMD
+        if (isUnix()) {
+            sh 'npm install'
+        } else {
+            bat("npm install")
+        }
+    }
+}
