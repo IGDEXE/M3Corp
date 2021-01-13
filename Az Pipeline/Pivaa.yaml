@@ -1,0 +1,65 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: Bash@3
+  inputs:
+    targetType: 'inline'
+    script: 'rm -rf local.properties'
+  displayName: 'Removendo Local Properties'
+- task: Gradle@2
+  inputs:
+    gradleWrapperFile: './gradle/wrapper/gradle-wrapper.properties'
+    tasks: 'assembleDebug'
+    publishJUnitResults: false
+    javaHomeOption: 'JDKVersion'
+    gradleOptions: '-Xmx512m'
+    sonarQubeRunAnalysis: false
+
+- task: Veracode@3
+  inputs:
+    ConnectionDetailsSelection: 'Credentials'
+    apiId: '$(APIID)'
+    apiKey: '$(APIKEY)'
+    veracodeAppProfile: 'IGDEXE.Pivaa'
+    version: '$(build.buildNumber)'
+    filepath: '$(system.defaultworkingdirectory)/apks/pivaa.apk'
+    createSandBox: false
+    createProfile: true
+    failTheBuildIfVeracodeScanDidNotInitiate: false
+    scanStatusCheckInterval: '60'
+    importResults: true
+    failBuildOnPolicyFail: false
+  displayName: 'SAST'
+
+- task: Bash@3
+  inputs:
+    targetType: 'inline'
+    script: |
+      export SRCCLR_SCM_URI=$(Build.Repository.Uri)
+      export SRCCLR_SCM_REF=$(Build.SourceBranch)
+      export SRCCLR_SCM_REV=$(build.buildNumber)
+      curl -sSL https://download.sourceclear.com/ci.sh | sh -s scan --allow-dirty
+      #curl -sSL https://download.sourceclear.com/ci.sh | sh -s scan -url "https://github.com/IGDEXE/pivaa"
+    workingDirectory: '$(Agent.BuildDirectory)'
+  displayName: 'SRCCLR'
+
+- task: Bash@3
+  inputs:
+    targetType: 'inline'
+    script: |
+      # Configuracoes
+      urlPipeScan="https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip"
+      veracodeID="$(APIID)"
+      veracodeAPIkey="$(APIKEY)"
+      # Faz o download da ferramenta
+      curl -o pipescan.zip $urlPipeScan
+      # Descompacta a ferramenta
+      unzip -o pipescan.zip -d "./"
+      # Faz a analise
+      java -jar "pipeline-scan.jar" -f "$(caminhoAPK)" -vid $veracodeID -vkey $veracodeAPIkey
+    workingDirectory: '$(system.defaultworkingdirectory)/apks'
+  displayName: 'Pipeline Scan'
