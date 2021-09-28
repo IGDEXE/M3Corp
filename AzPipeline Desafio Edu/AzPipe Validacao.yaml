@@ -1,0 +1,175 @@
+# PIVAA - Android
+# Pipeline para teste do Wrapper na validação de um APK
+# Para saber mais sobre o Wrapper, recomendo o artigo: 
+# https://igd753.medium.com/veracode-como-usar-o-wrapper-para-analisar-arquivos-ab10716dabc7
+
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+# Faz a instalação do Wrapper
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      # Configuracoes
+      $urlDownloadAPI = "https://tools.veracode.com/integrations/API-Wrappers/C%23/bin/VeracodeC%23API.zip"
+      
+      # Verifica se o Wrapper ja esta configurado
+      try {
+          VeracodeAPI.exe
+          Write-Host "Wrapper ja esta configurado"
+      }
+      catch {
+          try {
+              # Faz o download
+               Write-Host "Fazendo o download da ferramenta"
+               Invoke-WebRequest -Uri "$urlDownloadAPI" -OutFile "$env:LOCALAPPDATA/VeracodeAPI.zip"
+               # Descompacta o arquivo
+               Write-Host "Descompactando.."
+               Expand-Archive -Path "$env:LOCALAPPDATA/VeracodeAPI.zip" -DestinationPath "$Env:Programfiles/Veracode/API/.NET"
+               # Altera o nome do arquivo
+               Rename-Item -Path "$Env:Programfiles/Veracode/API/.NET/VeracodeC#API.exe" -NewName "$Env:Programfiles/Veracode/API/.NET/VeracodeAPI.exe"
+               # Adiciona o EXE ao caminho do Path do sistema
+               Write-Host "Adicionando ao Path do sistema"
+               $novoPath = $env:Path + ";$Env:Programfiles/Veracode/API/.NET"
+               Write-Host "##vso[task.setvariable variable=PATH;]$novoPath"
+               Write-Host "Procedimento de configuracao concluido" 
+           }
+           catch {
+               $ErrorMessage = $_.Exception.Message # Recebe o erro
+               Write-Host "Erro ao fazer a configuracao da API"
+               Write-Host "$ErrorMessage"
+           }
+      }
+  displayName: 'Configurando Wrapper'
+
+# Faz o Uploud do arquivo sem iniciar um scan
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      # Faz o Uploud sem aguardar
+      try {
+          # Caso exista um App ID, segue com os procedimentos
+          if ($(appID)) {
+              Clear-Host
+              Write-Host "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss') | Perfil do aplicativo localizado com ID: $(appID)"
+              # Faz o Uploud
+              Write-Host "Iniciando Upload do arquivo"
+              VeracodeAPI.exe -vid $(veracodeID) -vkey $(veracodeAPIkey) -action uploadfile -appid "$(appID)" -filepath "$(caminhoArquivo)"
+              Write-Host "Procedimento concluido"
+          } else {
+              Write-Host "Não foi encontrado um App ID para o $(veracodeAppName)"
+          }
+      }
+      catch {
+          $ErrorMessage = $_.Exception.Message # Recebe o erro
+          Write-Host "Erro ao iniciar Uploud"
+          Write-Host "$ErrorMessage"
+      }
+  displayName: 'Uploud File'
+
+# Faz um uploud e inicia o Scan
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      # Recebe o App ID com base no nome da aplicacao dentro do Veracode
+      [xml]$INFO = $(VeracodeAPI.exe -vid "$(veracodeID)" -vkey "$(veracodeAPIkey)" -action GetAppList | Select-String -Pattern $(veracodeAppName))
+      # Filtra o App ID
+      $appID = $INFO.app.app_id
+      # Gera um ID para a versao
+      $numeroVersao = Get-Date -Format hhmmssddMMyy
+      # Publica as variaveis para o Az Pipeline
+      Write-Host "##vso[task.setvariable variable=appID;]$appID"
+      Write-Host "##vso[task.setvariable variable=numeroVersao;]$numeroVersao"
+      
+      # Faz o Uploud and Scan
+      try {
+          # Caso exista um App ID, segue com os procedimentos
+          if ($appID) {
+              Clear-Host
+              Write-Host "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss') | Perfil do aplicativo localizado com ID: $appID"
+              # Faz o Uploud and Scan
+              Write-Host "Iniciando Upload and Scan"
+              VeracodeAPI.exe -vid $(veracodeID) -vkey $(veracodeAPIkey) -action UploadAndScanByAppId -appid "$appID" -filepath "$(caminhoArquivo)" -version $numeroVersao
+              Write-Host "Procedimento concluido"
+          } else {
+              Write-Host "Não foi encontrado um App ID para o $(veracodeAppName)"
+          }
+      }
+      catch {
+          $ErrorMessage = $_.Exception.Message # Recebe o erro
+          Write-Host "Erro ao iniciar Uploud and Scan"
+          Write-Host "$ErrorMessage"
+      }
+  displayName: 'Uploud and Scan'
+
+# Aguarda a publicação do resultado e exibe um pequeno relatorio
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      try {
+          # Configuracoes do loop
+          [int]$contador = 10
+          [int]$hardcount = 0
+          if ($hardcount -le 300) {
+              do {
+                  VeracodeAPI.exe -vid $(veracodeID) -vkey $(veracodeAPIkey) -action GetPreScanResults -appid "$(appID)" >> "$env:LOCALAPPDATA\$(numeroVersao).txt"
+                  $retorno = Get-Content "$env:LOCALAPPDATA\$(numeroVersao).txt"
+                  Clear-Host
+                  if ($retorno -match "$(appID)") {
+                      break
+                  } else {
+                      $validacao = $true
+                      Write-Host "Validando se o Scan $(numeroVersao) já foi concluido"
+                      Write-Host "Por favor aguarde"
+                      Start-Sleep -s $contador
+                      $hardcount += $contador
+                  }
+              } while ($validacao)
+              # Pega o ID da build
+              [string]$INFO = VeracodeAPI.exe -vid $(veracodeID) -vkey $(veracodeAPIkey) -action GetAppBuilds -appid "$(appID)"
+              [xml]$INFO = $INFO.Replace(' xmlns=', ' _xmlns=')
+              $buildINFO = $INFO.SelectSingleNode("//application[@app_id='$(appID)']")
+              $buildID = $buildINFO.build.build_id
+              # Gera o relatorio
+              $out = VeracodeAPI.exe -vid $(veracodeID) -vkey $(veracodeAPIkey) -action summaryreport -buildid "$buildID" -outputfilepath "$env:LOCALAPPDATA\$(numeroVersao).xml"
+              $securityINFO = [xml](Get-Content "$env:LOCALAPPDATA\$(numeroVersao).xml")
+      
+              # Recebendo informacoes
+              Clear-Host
+              $notaLetra = $securityINFO.summaryreport.'static-analysis'.rating
+              $notaScore = $securityINFO.summaryreport.'static-analysis'.score
+              $quemEnviou = $securityINFO.summaryreport.submitter
+              $politica = $securityINFO.summaryreport.policy_name
+              $complicanceStatus = $securityINFO.summaryreport.policy_compliance_status
+              # Exibe os resultados
+              Write-Host "Resultado do Scan: $(numeroVersao)"
+              Write-Host "Nome App: $(veracodeAppName) - App ID: $(appID)"
+              Write-Host "Enviado por: $quemEnviou"
+              Write-Host "Politica: $politica"
+              Write-Host "Nota: $notaLetra - Score: $notaScore - Resultado: $complicanceStatus"
+              Write-Host "Lista dos problemas encontrados:"
+              $levels = $securityINFO.summaryreport.severity.level
+              foreach ($level in $levels) {
+                  $securityINFO.summaryreport.severity[$level].category
+              }
+          } else {
+              Clear-Host
+              Write-Host "Um erro aconteceu ao fazer o procedimento"
+              Write-Host "Favor verificar a mensagem abaixo e comunicar o suporte"
+              VeracodeAPI.exe -vid $(veracodeID) -vkey $(veracodeAPIkey) -action GetPreScanResults -appid "$(appID)"
+          }
+      }
+      catch {
+          $ErrorMessage = $_.Exception.Message # Recebe o erro
+          Write-Host "Erro ao validar o Scan e pegar os dados"
+          Write-Host "$ErrorMessage"
+      }
+  displayName: 'Relatorio'
